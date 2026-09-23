@@ -3,10 +3,25 @@ Servicio de validación de emails.
 Endpoint POST /validate-email para validar formato de correo electrónico.
 """
 
+import logging
+import os
+import sys
+from datetime import datetime, timezone
+
 from flask import Flask, request, jsonify
 import re
 
 app = Flask(__name__)
+
+DEBUG = os.getenv("FLASK_DEBUG", "false").lower() in ("true", "1", "yes")
+
+logging.basicConfig(
+    level=logging.DEBUG if DEBUG else logging.INFO,
+    format='{"timestamp": "%(asctime)s", "level": "%(levelname)s", "message": "%(message)s", "endpoint": "%(endpoint)s", "method": "%(method)s", "status_code": %(status_code)s}',
+    datefmt="%Y-%m-%dT%H:%M:%S",
+    stream=sys.stdout
+)
+logger = logging.getLogger(__name__)
 
 
 EMAIL_REGEX = re.compile(
@@ -16,7 +31,7 @@ EMAIL_REGEX = re.compile(
 
 def is_valid_email(email: str) -> bool:
     """
-    Valida el formato de un correo electrónico usando regex compatible con RFC 5322.
+    Valida el formato de un correo electrónico usando regex de formato básico.
 
     Args:
         email: Cadena con el correo a validar.
@@ -41,24 +56,55 @@ def validate_email():
         200: {"email": "...", "valid": true/false}
         400: {"error": "..."}
     """
+    endpoint = request.endpoint or "/validate-email"
+    method = request.method
+
     if not request.is_json:
-        return jsonify({"error": "Content-Type debe ser application/json"}), 400
+        status_code = 400
+        error_msg = "Content-Type debe ser application/json"
+        logger.info(
+            "Solicitud rechazada",
+            extra={"endpoint": endpoint, "method": method, "status_code": status_code}
+        )
+        return jsonify({"error": error_msg}), status_code
 
     data = request.get_json()
 
     if data is None:
-        return jsonify({"error": "Cuerpo de solicitud inválido"}), 400
+        status_code = 400
+        error_msg = "Cuerpo de solicitud inválido"
+        logger.info(
+            "Solicitud rechazada",
+            extra={"endpoint": endpoint, "method": method, "status_code": status_code}
+        )
+        return jsonify({"error": error_msg}), status_code
 
     email = data.get('email')
 
     if email is None:
-        return jsonify({"error": "Campo 'email' es requerido"}), 400
+        status_code = 400
+        error_msg = "Campo 'email' es requerido"
+        logger.info(
+            "Solicitud rechazada",
+            extra={"endpoint": endpoint, "method": method, "status_code": status_code}
+        )
+        return jsonify({"error": error_msg}), status_code
 
     if not isinstance(email, str):
-        return jsonify({"error": "Campo 'email' debe ser una cadena"}), 400
+        status_code = 400
+        error_msg = "Campo 'email' debe ser una cadena"
+        logger.info(
+            "Solicitud rechazada",
+            extra={"endpoint": endpoint, "method": method, "status_code": status_code}
+        )
+        return jsonify({"error": error_msg}), status_code
 
     valid = is_valid_email(email)
 
+    logger.info(
+        f"Email validado: {valid}",
+        extra={"endpoint": endpoint, "method": method, "status_code": 200}
+    )
     return jsonify({"email": email, "valid": valid}), 200
 
 
@@ -70,8 +116,12 @@ def health():
     Respuesta:
         200: {"status": "ok", "service": "email-validation", "version": "1.0.0"}
     """
+    logger.info(
+        "Health check",
+        extra={"endpoint": "/health", "method": "GET", "status_code": 200}
+    )
     return jsonify({"status": "ok", "service": "email-validation", "version": "1.0.0"}), 200
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=DEBUG)
